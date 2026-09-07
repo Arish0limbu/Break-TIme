@@ -3,7 +3,7 @@ Configuration for GitHub Daily Activity Automation
 """
 
 # ==================== COMMIT SETTINGS ====================
-MIN_COMMITS = 5           # Minimum commits per day
+MIN_COMMITS = 10          # Minimum commits per day
 MAX_COMMITS = 20          # Maximum commits per day
 MAX_COMMITS_PER_RUN = 10  # Maximum commits per script execution
 
