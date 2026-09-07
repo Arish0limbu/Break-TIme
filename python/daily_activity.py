@@ -207,9 +207,10 @@ def create_test_file():
     
     test_file = tests_dir / "test_example.py"
     if not test_file.exists():
-        content = """"""
+        content = """
+\"\"\"
 Example test file for project validation.
-"""
+\"\"\"
 
 def test_example():
     \"\"\"Example test case\"\"\"
