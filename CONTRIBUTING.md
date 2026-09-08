@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to this project!
 
+We welcome contributions from the community and appreciate your help.
+
 ## How to Contribute
 
 1. Fork the repository
