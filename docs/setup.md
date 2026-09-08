@@ -14,3 +14,7 @@ Edit the configuration file to customize settings.
 ## Usage
 
 Follow the documentation to use the application effectively.
+
+## Support
+
+For issues and questions, please refer to the troubleshooting guide.
