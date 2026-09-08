@@ -284,9 +284,15 @@ def run_daily_activity():
     # Calculate daily target
     daily_target = calculate_daily_target()
     today_commits = get_today_commit_count()
-    remaining = max(0, daily_target - today_commits)
     
     logger.info(f"Commits made today: {today_commits}")
+    
+    # Only run if less than threshold commits today
+    if today_commits >= config.AUTO_RUN_THRESHOLD:
+        logger.info(f"Already have {today_commits} commits today (threshold: {config.AUTO_RUN_THRESHOLD}), skipping automation")
+        return
+    
+    remaining = max(0, daily_target - today_commits)
     logger.info(f"Remaining commits needed: {remaining}")
     
     if remaining == 0:

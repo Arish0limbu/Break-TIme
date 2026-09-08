@@ -6,6 +6,7 @@ Configuration for GitHub Daily Activity Automation
 MIN_COMMITS = 10          # Minimum commits per day
 MAX_COMMITS = 20          # Maximum commits per day
 MAX_COMMITS_PER_RUN = 10  # Maximum commits per script execution
+AUTO_RUN_THRESHOLD = 9    # Only run automation if today's commits < this number
 
 # ==================== AUTOMATION CONTROL ====================
 ENABLE_AUTOMATION = True  # Set to False to disable automation
