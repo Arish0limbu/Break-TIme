@@ -10,3 +10,5 @@ All notable changes to this project will be documented in this file.
 - Professional documentation
 - Configuration management
 - Logging system
+- API documentation
+- Setup guide
