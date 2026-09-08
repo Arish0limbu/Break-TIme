@@ -2,7 +2,11 @@
 
 A professional automation system for maintaining meaningful daily GitHub activity through legitimate contributions to your repository.
 
-## 🎯 Features
+## � Features
+
+This automation system helps maintain consistent GitHub activity through legitimate contributions only.
+
+## �🎯 Features
 
 - **Smart Commit Targeting**: Generates 5-20 meaningful commits per day (configurable)
 - **Real Work Only**: Each commit represents legitimate improvements to your codebase
