@@ -10,3 +10,7 @@
 ## Configuration
 
 Edit the configuration file to customize settings.
+
+## Usage
+
+Follow the documentation to use the application effectively.
