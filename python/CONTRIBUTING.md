@@ -15,3 +15,11 @@ Thank you for your interest in contributing!
 - Follow the existing code style
 - Add tests for new features
 - Update documentation as needed
+
+## Code Example
+
+```python
+# Example code
+def example_function():
+    return "Hello, World!"
+```
