@@ -22,3 +22,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Initial project setup
 - GitHub activity automation
+
+## Code Example
+
+```python
+# Example code
+def example_function():
+    return "Hello, World!"
+```

@@ -224,6 +224,100 @@ if __name__ == "__main__":
     
     return None
 
+def improve_documentation_structure():
+    """Add structure improvements to documentation files"""
+    doc_files = list(Path(".").rglob("*.md"))
+    for doc_file in doc_files:
+        if not can_modify_file(doc_file):
+            continue
+            
+        content = doc_file.read_text()
+        
+        # Add table of contents if missing and file is long enough
+        if len(content) > 500 and "## Table of Contents" not in content:
+            # Add table of contents
+            toc = "\n## Table of Contents\n\n- [Introduction](#introduction)\n- [Features](#features)\n- [Usage](#usage)\n"
+            if "# Introduction" in content or "# Features" in content or "# Usage" in content:
+                improved = content.replace("# ", toc + "# ", 1)
+                doc_file.write_text(improved)
+                return f"docs: add table of contents to {doc_file.name}"
+        
+        # Add badges section if missing
+        if len(content) > 300 and "![GitHub" not in content and doc_file.name == "README.md":
+            badges = "\n![GitHub](https://img.shields.io/badge/github-%23181717.svg?style=for-the-badge&logo=github&logoColor=white)\n"
+            improved = badges + content
+            doc_file.write_text(improved)
+            return "docs: add badges to README"
+    
+    return None
+
+def add_code_examples():
+    """Add code examples to documentation"""
+    doc_files = list(Path(".").rglob("*.md"))
+    for doc_file in doc_files:
+        if not can_modify_file(doc_file):
+            continue
+            
+        content = doc_file.read_text()
+        
+        # Add code example section if missing
+        if "```" not in content and len(content) > 200:
+            example = "\n## Code Example\n\n```python\n# Example code\ndef example_function():\n    return \"Hello, World!\"\n```\n"
+            improved = content + example
+            doc_file.write_text(improved)
+            return f"docs: add code example to {doc_file.name}"
+    
+    return None
+
+def improve_file_organization():
+    """Add organization comments to files"""
+    code_files = list(Path(".").rglob("*.py")) + list(Path(".").rglob("*.js")) + list(Path(".").rglob("*.ts"))
+    for code_file in code_files:
+        if not can_modify_file(code_file):
+            continue
+            
+        content = code_file.read_text()
+        
+        # Add file header if missing
+        if not content.startswith("#") and not content.startswith("\"\"\"") and not content.startswith("//"):
+            header = f"# {code_file.name}\n# Auto-generated file header\n\n"
+            improved = header + content
+            code_file.write_text(improved)
+            return f"refactor: add file header to {code_file.name}"
+    
+    return None
+
+def add_license_file():
+    """Add LICENSE file if missing"""
+    license_path = Path("LICENSE")
+    if not license_path.exists():
+        content = """MIT License
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+        license_path.write_text(content)
+        return "chore: add MIT license"
+    
+    return None
+
 def make_legitimate_change():
     """Attempt to make a legitimate change to the repository"""
     logger.info("Looking for legitimate changes to make")
@@ -235,6 +329,10 @@ def make_legitimate_change():
         add_contributing_guide,
         improve_code_comments,
         create_test_file,
+        improve_documentation_structure,
+        add_code_examples,
+        improve_file_organization,
+        add_license_file,
     ]
     
     for generator in change_generators:
