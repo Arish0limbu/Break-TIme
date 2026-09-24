@@ -1,26 +1,34 @@
 # Contributing
 
-Thank you for your interest in contributing to this project!
+Thanks for taking the time to improve Break-Time.
 
-We welcome contributions from the community and appreciate your help.
+## Development setup
 
-## How to Contribute
+- Python 3.10 or newer
+- Git installed and available on PATH
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Commit your changes (`git commit -m 'Add some amazing feature'`)
-5. Push to the branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
+Clone the repository, make a focused change, and review the result before committing it.
 
-## Guidelines
+## Project guidelines
 
-- Write clear, descriptive commit messages
-- Follow the existing code style and conventions
-- Add tests for new features when appropriate
-- Update documentation as needed
-- Ensure all tests pass before submitting
+- Keep commits tied to real code, documentation, or maintenance work.
+- Do not add scheduled commit targets or automated filler edits.
+- Preserve the Git identity configured by the contributor.
+- Keep the helper read-only by default and require explicit flags for commits and pushes.
+- Update SAFE_PATHS or PROTECTED_PATHS only when the change requires it.
+- Keep documentation consistent with the current CLI behavior.
 
-## Code of Conduct
+## Review your staged changes
 
-Please be respectful and constructive in all interactions.
+Stage only the files that belong to your change, then inspect the helper's read-only preview:
+
+~~~sh
+git add path/to/changed-file
+python python/daily_activity.py
+~~~
+
+The helper refuses staged files that are outside SAFE_PATHS or match PROTECTED_PATHS. It never stages files itself.
+
+## Commit and submit
+
+Use a concise message that describes the change. Open a pull request for review when contributing from a fork or feature branch.
