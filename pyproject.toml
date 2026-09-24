@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "break-time-git-helper"
+version = "0.1.0"
+description = "A manual, safety-first Git helper"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+
+[project.scripts]
+break-time = "daily_activity:run_daily_activity"
+
+[tool.setuptools]
+py-modules = ["daily_activity", "config"]
+package-dir = {"" = "python"}
