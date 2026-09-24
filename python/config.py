@@ -12,6 +12,8 @@ SAFE_PATHS = (
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "LICENSE",
+    "SECURITY.md",
+    "pyproject.toml",
     "docs/",
     "python/",
     "tests/",
