@@ -111,6 +111,11 @@ def get_staged_files(repository: Path) -> list[str]:
     return [path for path in output.split("\0") if path]
 
 
+def get_staged_diff_stat(repository: Path) -> str:
+    """Return Git's summary of staged insertions and deletions."""
+    return run_git_command(["diff", "--cached", "--stat"], repository).strip()
+
+
 def get_worktree_status(repository: Path) -> str:
     """Return the short status for staged, unstaged, and untracked changes."""
     return run_git_command(
@@ -154,6 +159,11 @@ def run_daily_activity(argv: list[str] | None = None) -> int:
         action="store_true",
         help="push the new commit to origin; requires --commit",
     )
+    parser.add_argument(
+        "--stat",
+        action="store_true",
+        help="show Git's staged insertion and deletion summary",
+    )
     args = parser.parse_args(argv)
 
     if args.commit and not args.message:
@@ -194,6 +204,11 @@ def run_daily_activity(argv: list[str] | None = None) -> int:
                 ", ".join(blocked_files),
             )
             return 2
+
+        if args.stat:
+            diff_stat = get_staged_diff_stat(repository)
+            if diff_stat:
+                LOGGER.info("Staged change summary:\n%s", diff_stat)
 
         if not args.commit:
             LOGGER.info(
