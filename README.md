@@ -11,49 +11,52 @@ Break-Time is a small Python command-line helper for reviewing and committing re
 - It uses your existing Git author identity and does not set a bot identity.
 - Safe-path rules allow expected project files and block secrets and generated files.
 
-There is no commit target, scheduler, or automatic file generator.
+There is no scheduler or automatic file generator.
 
 ## Requirements
 
 - Python 3.10 or newer
 - Git installed and available on PATH
 
+## Install
+
+From a checkout of this repository, install the command in your active Python environment:
+
+~~~sh
+python -m pip install .
+break-time --help
+~~~
+
+You can also run the script directly without installing the package.
+
 ## Quick start
 
-From the repository root, stage files that contain your actual work and preview them:
+From the repository root, stage actual work and preview the staged files and summary:
 
 ~~~sh
 git add README.md
-python python/daily_activity.py
+break-time --stat
 ~~~
 
-If the preview lists the intended files, create one commit with a clear message:
+After reviewing the preview, create one commit with a clear message:
 
 ~~~sh
-python python/daily_activity.py --commit --message "docs: clarify usage"
+break-time --commit --message "docs: clarify usage"
 ~~~
 
-To push that commit to the current branch's origin remote, opt in explicitly:
+To push the new commit to the current branch's origin remote, opt in explicitly with --push.
 
-~~~sh
-python python/daily_activity.py --commit --message "docs: clarify usage" --push
-~~~
-
-The tool reports all staged paths. It refuses the operation if any staged path is outside SAFE_PATHS or matches PROTECTED_PATHS. Unstaged and untracked files remain untouched. You can stage files with Git yourself before running the helper.
+The tool refuses to continue if any staged path is outside SAFE_PATHS or matches PROTECTED_PATHS. Unstaged and untracked files remain untouched.
 
 ## Configuration
 
-Edit python/config.py to change the allowlist, protected paths, or log level.
+Edit python/config.py to change the allowlist, protected paths, or log level. PROTECTED_PATHS always takes precedence over SAFE_PATHS. Logging goes to the console and does not create a log file.
 
-- SAFE_PATHS defines repository-relative files and directories the helper may commit.
-- PROTECTED_PATHS always takes precedence, even when a path also matches SAFE_PATHS.
-- Logging goes to the console and does not create a log file in the repository.
-
-MIN_COMMITS and MAX_COMMITS remain in the configuration temporarily for compatibility with older readers. The current helper ignores them.
+MIN_COMMITS and MAX_COMMITS remain temporarily for compatibility with older readers; the current helper ignores them.
 
 ## Design notes
 
 - Git commands are run as argument lists without a shell.
-- The helper does not stage all files, configure an author, rewrite history, or force-push.
+- The helper does not stage files, configure an author, rewrite history, or force-push.
 - A detached HEAD cannot be committed through the helper.
-- No GitHub Actions workflow is required; use your normal local Git workflow.
+- GitHub Actions is not required; use your normal local Git workflow.
