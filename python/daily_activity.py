@@ -1,441 +1,224 @@
 #!/usr/bin/env python3
-"""
-GitHub Daily Activity Automation
-Makes meaningful commits to maintain daily GitHub activity.
+"""Safely review and optionally commit already-staged Git changes.
+
+The default mode is read-only. This tool never edits files or stages changes.
 """
 
-import os
-import sys
-import random
+import argparse
 import logging
 import subprocess
-from datetime import datetime
-from pathlib import Path
+import sys
+from pathlib import Path, PurePosixPath
+
 import config
 
-# ==================== LOGGING SETUP ====================
-def setup_logging():
-    """Configure logging system"""
-    log_dir = Path(config.LOG_FILE).parent
-    log_dir.mkdir(parents=True, exist_ok=True)
-    
+
+LOGGER = logging.getLogger(__name__)
+
+
+class GitCommandError(RuntimeError):
+    """Raised when a Git command cannot be completed."""
+
+
+def setup_logging() -> None:
+    """Log to the console without creating files in the repository."""
+    level_name = str(getattr(config, "LOG_LEVEL", "INFO")).upper()
+    level = getattr(logging, level_name, logging.INFO)
     logging.basicConfig(
-        level=getattr(logging, config.LOG_LEVEL),
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(config.LOG_FILE),
-            logging.StreamHandler(sys.stdout)
-        ]
+        level=level,
+        format="%(levelname)s: %(message)s",
+        stream=sys.stdout,
     )
-    return logging.getLogger(__name__)
 
-logger = setup_logging()
 
-# ==================== GIT OPERATIONS ====================
-def run_git_command(command, check=True):
-    """Execute git command and return output"""
+def run_git_command(arguments: list[str], cwd: Path, timeout: int = 30) -> str:
+    """Run Git without a shell and return stdout unchanged."""
     try:
         result = subprocess.run(
-            command,
-            shell=True,
-            check=check,
+            ["git", *arguments],
+            cwd=cwd,
             capture_output=True,
-            text=True
+            check=False,
+            text=True,
+            timeout=timeout,
         )
-        return result.stdout.strip(), result.returncode
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Git command failed: {command}")
-        logger.error(f"Error: {e.stderr}")
-        return "", e.returncode
+    except FileNotFoundError as exc:
+        raise GitCommandError("Git is not installed or is not available on PATH.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GitCommandError(f"Git command timed out after {timeout} seconds.") from exc
 
-def configure_git():
-    """Configure git identity"""
-    logger.info("Configuring git identity")
-    run_git_command(f'git config user.name "{config.GIT_USER_NAME}"')
-    run_git_command(f'git config user.email "{config.GIT_USER_EMAIL}"')
+    if result.returncode != 0:
+        detail = result.stderr.strip()
+        command = " ".join(arguments)
+        message = f"git {command} failed with exit code {result.returncode}"
+        if detail:
+            message = f"{message}: {detail}"
+        raise GitCommandError(message)
 
-def get_current_branch():
-    """Get current git branch"""
-    stdout, _ = run_git_command("git rev-parse --abbrev-ref HEAD")
-    return stdout if stdout else config.REPOSITORY_BRANCH
+    return result.stdout
 
-def has_uncommitted_changes():
-    """Check if there are uncommitted changes"""
-    stdout, _ = run_git_command("git status --porcelain")
-    return len(stdout) > 0
 
-def commit_changes(message):
-    """Stage and commit changes with given message"""
-    logger.info(f"Committing: {message}")
-    run_git_command("git add .")
-    stdout, returncode = run_git_command(f'git commit -m "{message}"')
-    if returncode == 0:
-        logger.info(f"Successfully committed: {message}")
-        return True
-    else:
-        logger.warning(f"No changes to commit or commit failed")
+def get_repository_root() -> Path:
+    """Return the root of the Git repository containing the current directory."""
+    output = run_git_command(["rev-parse", "--show-toplevel"], Path.cwd())
+    return Path(output.strip()).resolve()
+
+
+def get_current_branch(repository: Path) -> str:
+    """Return the current branch name, or an empty string for a detached HEAD."""
+    return run_git_command(["branch", "--show-current"], repository).strip()
+
+
+def _matches_path(path: str, pattern: str) -> bool:
+    """Match an allowlist or protected pattern against a repository-relative path."""
+    normalized_path = path.replace("\\", "/").strip("/")
+    normalized_pattern = pattern.replace("\\", "/").strip("/")
+
+    if not normalized_path or not normalized_pattern:
         return False
 
-def push_changes(branch):
-    """Push changes to remote repository"""
-    logger.info(f"Pushing changes to {branch}")
-    stdout, returncode = run_git_command(f"git push origin {branch}")
-    if returncode == 0:
-        logger.info("Successfully pushed changes")
+    if pattern.endswith(("/", "\\")):
+        return (
+            normalized_path == normalized_pattern
+            or normalized_path.startswith(normalized_pattern + "/")
+        )
+
+    candidate = PurePosixPath(normalized_path)
+    if candidate.match(normalized_pattern):
         return True
-    else:
-        logger.error(f"Failed to push changes: {stdout}")
+
+    return any(PurePosixPath(part).match(normalized_pattern) for part in candidate.parts)
+
+
+def can_modify_file(filepath: str) -> bool:
+    """Return whether a staged path is allowed by the configured path policies."""
+    normalized_path = filepath.replace("\\", "/").strip("/")
+    protected_paths = getattr(config, "PROTECTED_PATHS", ())
+    safe_paths = getattr(config, "SAFE_PATHS", ())
+
+    if any(_matches_path(normalized_path, pattern) for pattern in protected_paths):
         return False
 
-# ==================== LEGITIMATE CHANGES ====================
-def can_modify_file(filepath):
-    """Check if file can be safely modified"""
-    filepath = Path(filepath)
-    
-    # Check protected paths
-    for protected in config.PROTECTED_PATHS:
-        if protected in str(filepath) or filepath.match(protected):
-            return False
-    
-    # Check if file is in safe paths
-    for safe in config.SAFE_PATHS:
-        if safe in str(filepath) or filepath.match(safe):
-            return True
-    
-    return False
+    return any(_matches_path(normalized_path, pattern) for pattern in safe_paths)
 
-def improve_readme():
-    """Add meaningful improvements to README"""
-    readme_path = Path("README.md")
-    if not readme_path.exists():
-        return None
-    
-    content = readme_path.read_text()
-    improvements = [
-        "\n## Getting Started\n\nThis project is easy to set up and use.",
-        "\n## Contributing\n\nContributions are welcome! Please read our guidelines.",
-        "\n## License\n\nThis project is open source and available under the MIT License.",
-        "\n## Features\n\n- Easy to use\n- Well documented\n- Active development",
-        "\n## Support\n\nFor issues and questions, please open an issue on GitHub.",
-    ]
-    
-    for improvement in improvements:
-        if improvement not in content:
-            content += improvement
-            readme_path.write_text(content)
-            return "docs: improve README documentation"
-    
-    return None
 
-def update_changelog():
-    """Add entry to changelog"""
-    changelog_path = Path("CHANGELOG.md")
-    if not changelog_path.exists():
-        # Create changelog if it doesn't exist
-        initial_content = """# Changelog
+def get_staged_files(repository: Path) -> list[str]:
+    """Return staged paths, preserving spaces and other valid filename characters."""
+    output = run_git_command(
+        ["diff", "--cached", "--name-only", "-z"],
+        repository,
+    )
+    return [path for path in output.split("\0") if path]
 
-All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+def get_worktree_status(repository: Path) -> str:
+    """Return the short status for staged, unstaged, and untracked changes."""
+    return run_git_command(
+        ["status", "--short", "--untracked-files=all"],
+        repository,
+    ).strip()
 
-### Added
-- Initial project setup
-- GitHub activity automation
-"""
-        changelog_path.write_text(initial_content)
-        return "chore: add changelog"
-    
-    content = changelog_path.read_text()
-    today = datetime.now().strftime("%Y-%m-%d")
-    entry = f"\n## [{today}]\n\n### Updated\n- Automated documentation improvements\n"
-    
-    if today not in content:
-        content = content.replace("## [Unreleased]", entry + "## [Unreleased]")
-        changelog_path.write_text(content)
-        return "chore: update changelog"
-    
-    return None
 
-def add_contributing_guide():
-    """Add contributing guide if missing"""
-    contributing_path = Path("CONTRIBUTING.md")
-    if not contributing_path.exists():
-        content = """# Contributing
+def commit_changes(repository: Path, message: str) -> None:
+    """Commit staged changes only; the caller is responsible for staging."""
+    run_git_command(["commit", "-m", message], repository)
 
-Thank you for your interest in contributing!
 
-## How to Contribute
+def push_changes(repository: Path, branch: str) -> None:
+    """Push the current branch to origin when the caller explicitly requests it."""
+    run_git_command(["push", "origin", branch], repository)
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
 
-## Guidelines
+def run_daily_activity(argv: list[str] | None = None) -> int:
+    """Review staged changes and optionally commit or push them."""
+    setup_logging()
 
-- Write clear commit messages
-- Follow the existing code style
-- Add tests for new features
-- Update documentation as needed
-"""
-        contributing_path.write_text(content)
-        return "docs: add contributing guidelines"
-    
-    return None
+    parser = argparse.ArgumentParser(
+        description=(
+            "Review already-staged changes. The default run is read-only; "
+            "files are never edited or staged automatically."
+        )
+    )
+    parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="create one commit from the staged, allowed files",
+    )
+    parser.add_argument(
+        "-m",
+        "--message",
+        help="commit message; required with --commit",
+    )
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="push the new commit to origin; requires --commit",
+    )
+    args = parser.parse_args(argv)
 
-def improve_code_comments():
-    """Add helpful comments to Python files"""
-    python_files = list(Path(".").rglob("*.py"))
-    for py_file in python_files:
-        if not can_modify_file(py_file):
-            continue
-            
-        content = py_file.read_text()
-        if "# TODO:" not in content and len(content) > 100:
-            # Add a helpful comment if file is substantial
-            improved = content + "\n# TODO: Consider adding more documentation\n"
-            py_file.write_text(improved)
-            return f"docs: add comments to {py_file.name}"
-    
-    return None
+    if args.commit and not args.message:
+        parser.error("--message is required with --commit")
+    if args.message and not args.commit:
+        parser.error("--message can only be used with --commit")
+    if args.push and not args.commit:
+        parser.error("--push requires --commit")
+    if args.message is not None and not args.message.strip():
+        parser.error("commit message cannot be empty")
 
-def create_test_file():
-    """Create a simple test file if tests directory exists"""
-    tests_dir = Path("tests")
-    if not tests_dir.exists():
-        return None
-    
-    test_file = tests_dir / "test_example.py"
-    if not test_file.exists():
-        content = """
-\"\"\"
-Example test file for project validation.
-\"\"\"
-
-def test_example():
-    \"\"\"Example test case\"\"\"
-    assert True
-
-if __name__ == "__main__":
-    test_example()
-"""
-        test_file.write_text(content)
-        return "test: add example test case"
-    
-    return None
-
-def improve_documentation_structure():
-    """Add structure improvements to documentation files"""
-    doc_files = list(Path(".").rglob("*.md"))
-    for doc_file in doc_files:
-        if not can_modify_file(doc_file):
-            continue
-            
-        content = doc_file.read_text()
-        
-        # Add table of contents if missing and file is long enough
-        if len(content) > 500 and "## Table of Contents" not in content:
-            # Add table of contents
-            toc = "\n## Table of Contents\n\n- [Introduction](#introduction)\n- [Features](#features)\n- [Usage](#usage)\n"
-            if "# Introduction" in content or "# Features" in content or "# Usage" in content:
-                improved = content.replace("# ", toc + "# ", 1)
-                doc_file.write_text(improved)
-                return f"docs: add table of contents to {doc_file.name}"
-        
-        # Add badges section if missing
-        if len(content) > 300 and "![GitHub" not in content and doc_file.name == "README.md":
-            badges = "\n![GitHub](https://img.shields.io/badge/github-%23181717.svg?style=for-the-badge&logo=github&logoColor=white)\n"
-            improved = badges + content
-            doc_file.write_text(improved)
-            return "docs: add badges to README"
-    
-    return None
-
-def add_code_examples():
-    """Add code examples to documentation"""
-    doc_files = list(Path(".").rglob("*.md"))
-    for doc_file in doc_files:
-        if not can_modify_file(doc_file):
-            continue
-            
-        content = doc_file.read_text()
-        
-        # Add code example section if missing
-        if "```" not in content and len(content) > 200:
-            example = "\n## Code Example\n\n```python\n# Example code\ndef example_function():\n    return \"Hello, World!\"\n```\n"
-            improved = content + example
-            doc_file.write_text(improved)
-            return f"docs: add code example to {doc_file.name}"
-    
-    return None
-
-def improve_file_organization():
-    """Add organization comments to files"""
-    code_files = list(Path(".").rglob("*.py")) + list(Path(".").rglob("*.js")) + list(Path(".").rglob("*.ts"))
-    for code_file in code_files:
-        if not can_modify_file(code_file):
-            continue
-            
-        content = code_file.read_text()
-        
-        # Add file header if missing
-        if not content.startswith("#") and not content.startswith("\"\"\"") and not content.startswith("//"):
-            header = f"# {code_file.name}\n# Auto-generated file header\n\n"
-            improved = header + content
-            code_file.write_text(improved)
-            return f"refactor: add file header to {code_file.name}"
-    
-    return None
-
-def add_license_file():
-    """Add LICENSE file if missing"""
-    license_path = Path("LICENSE")
-    if not license_path.exists():
-        content = """MIT License
-
-Copyright (c) 2026
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-"""
-        license_path.write_text(content)
-        return "chore: add MIT license"
-    
-    return None
-
-def make_legitimate_change():
-    """Attempt to make a legitimate change to the repository"""
-    logger.info("Looking for legitimate changes to make")
-    
-    # Try different types of improvements
-    change_generators = [
-        improve_readme,
-        update_changelog,
-        add_contributing_guide,
-        improve_code_comments,
-        create_test_file,
-        improve_documentation_structure,
-        add_code_examples,
-        improve_file_organization,
-        add_license_file,
-    ]
-    
-    for generator in change_generators:
-        try:
-            message = generator()
-            if message:
-                logger.info(f"Found legitimate change: {message}")
-                return message
-        except Exception as e:
-            logger.warning(f"Change generator failed: {e}")
-            continue
-    
-    logger.info("No legitimate changes available")
-    return None
-
-# ==================== MAIN AUTOMATION ====================
-def calculate_daily_target():
-    """Calculate random daily commit target"""
-    target = random.randint(config.MIN_COMMITS, config.MAX_COMMITS)
-    logger.info(f"Daily commit target: {target}")
-    return target
-
-def get_today_commit_count():
-    """Get number of commits made today"""
-    today = datetime.now().strftime("%Y-%m-%d")
-    stdout, _ = run_git_command(f'git log --since="{today} 00:00:00" --until="{today} 23:59:59" --oneline')
-    commits = stdout.split('\n') if stdout else []
-    return len([c for c in commits if c])
-
-def run_daily_activity():
-    """Main automation function"""
-    logger.info("=" * 50)
-    logger.info(f"Starting daily activity automation - {datetime.now()}")
-    logger.info("=" * 50)
-    
-    if not config.ENABLE_AUTOMATION:
-        logger.info("Automation is disabled in configuration")
-        return
-    
-    # Configure git
-    configure_git()
-    
-    # Get current branch
-    branch = get_current_branch()
-    logger.info(f"Working on branch: {branch}")
-    
-    # Calculate daily target
-    daily_target = calculate_daily_target()
-    today_commits = get_today_commit_count()
-    
-    logger.info(f"Commits made today: {today_commits}")
-    
-    # Only run if less than threshold commits today
-    if today_commits >= config.AUTO_RUN_THRESHOLD:
-        logger.info(f"Already have {today_commits} commits today (threshold: {config.AUTO_RUN_THRESHOLD}), skipping automation")
-        return
-    
-    remaining = max(0, daily_target - today_commits)
-    logger.info(f"Remaining commits needed: {remaining}")
-    
-    if remaining == 0:
-        logger.info("Daily target already reached")
-        return
-    
-    # Limit commits per run
-    commits_to_make = min(remaining, config.MAX_COMMITS_PER_RUN)
-    logger.info(f"Will attempt {commits_to_make} commits this run")
-    
-    completed = 0
-    for i in range(commits_to_make):
-        logger.info(f"Attempt {i + 1}/{commits_to_make}")
-        
-        # Make a legitimate change
-        commit_message = make_legitimate_change()
-        
-        if not commit_message:
-            logger.info("No more legitimate changes available")
-            break
-        
-        # Commit the change
-        if commit_changes(commit_message):
-            completed += 1
-        
-        # Small delay between commits (natural timing)
-        import time
-        time.sleep(random.uniform(1, 3))
-    
-    logger.info(f"Completed {completed} commits")
-    
-    # Push changes if any commits were made
-    if completed > 0:
-        if push_changes(branch):
-            logger.info("Successfully pushed all changes")
-        else:
-            logger.warning("Failed to push changes")
-    
-    logger.info("=" * 50)
-    logger.info(f"Daily activity automation completed - {datetime.now()}")
-    logger.info("=" * 50)
-
-if __name__ == "__main__":
     try:
-        run_daily_activity()
-    except Exception as e:
-        logger.error(f"Automation failed with error: {e}")
-        sys.exit(1)
+        repository = get_repository_root()
+        status = get_worktree_status(repository)
+        staged_files = get_staged_files(repository)
+
+        LOGGER.info("Repository: %s", repository)
+        if status:
+            LOGGER.info("Working tree status:\n%s", status)
+        else:
+            LOGGER.info("Working tree is clean.")
+
+        if not staged_files:
+            LOGGER.info("No staged changes; nothing to commit.")
+            return 0
+
+        LOGGER.info("Staged files:")
+        for filepath in staged_files:
+            LOGGER.info("  %s", filepath)
+
+        blocked_files = [
+            filepath for filepath in staged_files if not can_modify_file(filepath)
+        ]
+        if blocked_files:
+            LOGGER.error(
+                "Refusing to continue because these staged paths are protected "
+                "or outside SAFE_PATHS: %s",
+                ", ".join(blocked_files),
+            )
+            return 2
+
+        if not args.commit:
+            LOGGER.info(
+                "Read-only preview complete. Stage intended files, then use "
+                "--commit --message to create a commit."
+            )
+            return 0
+
+        branch = get_current_branch(repository)
+        if not branch:
+            LOGGER.error("Cannot commit from a detached HEAD.")
+            return 2
+
+        commit_changes(repository, args.message.strip())
+        LOGGER.info("Created one commit on branch %s.", branch)
+
+        if args.push:
+            push_changes(repository, branch)
+            LOGGER.info("Pushed branch %s to origin.", branch)
+
+        return 0
+    except GitCommandError as exc:
+        LOGGER.error("%s", exc)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_daily_activity())
